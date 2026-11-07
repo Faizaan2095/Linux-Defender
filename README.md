@@ -4,7 +4,7 @@ A lightweight Linux defense utility designed to detect risky archive behavior an
 
 ## Continuous monitoring
 
-The systemd user service scans configured folders every 30 seconds, including while you use the desktop. It starts automatically when you log in and logs warnings to the systemd journal. It does not need root privileges.
+The systemd user service scans configured folders every 30 seconds, including while you use the desktop. It starts automatically when you log in and logs warnings to the systemd journal. It does not need root privileges and never blocks downloads or extraction.
 
 1. Clone this repository to `~/Linux-Defender` (or edit `WorkingDirectory` in `systemd/linux-defender.service` to the checkout location).
 2. Install and start the service:
@@ -23,16 +23,18 @@ The systemd user service scans configured folders every 30 seconds, including wh
    journalctl --user -u linux-defender.service -f
    ```
 
-By default, the service monitors `~/Downloads`, warns on non-image files at least 100 MiB, and flags ZIP-compatible archives with at least 500 MiB expanded size, a compression ratio of 100:1 or more (for archives with at least 10 MiB expanded data), or 10,000 entries. Common image formats (PNG, JPEG, GIF, WebP, BMP, TIFF, HEIC, AVIF, SVG) are excluded from large-file warnings so saving a big picture does not produce a warning. A suspicious archive warning also reports whether it contains a README and any simple claimed author/creator/publisher/maintainer/vendor field found in that file.
+By default, the service monitors `~/Downloads`, skips large-file alerts for common image types, and inspects archives for excessive expansion, suspicious compression ratios, too many entries, unsafe paths, symlinks, nested archives, and executable/installer payloads. Archive inspection reads small samples from README/manifest documents and installer scripts with strict per-file and total byte limits; it does not unpack the archive or execute its contents. Script pattern matches are heuristics and may be false positives. A README and any author/creator claim are untrusted self-reported text, not proof of legitimacy.
 
-**A README or creator name is not proof that an app is legitimate.** Archive contents can lie; this monitor does not authenticate publishers, inspect online reputation, or verify software signatures. It never blocks downloads or extraction; it only reports warnings for review. In addition, it sees files after they arrive in the watched folder, so it cannot certify an app before download.
+If `clamscan` (ClamAV) is installed, the monitor also sends each changed, stable file to the local signature scanner with file/scan-size limits and a timeout. Install ClamAV and keep its virus definitions updated using your Linux distribution's package manager to enable this additional check. ClamAV is optional; without it, only the bounded static checks run. A scan-limit or scanner error is reported as inconclusive rather than clean. Set `LINUX_DEFENDER_CLAMSCAN=0` to disable it. The monitor never executes downloaded files.
+
+Files are inspected after they appear in the watched folder and remain unchanged for two scan cycles (normally about 30 seconds after first observation). This reduces checks of in-progress downloads but is not a pre-download gate. No scanner can guarantee maximum security: signatures can miss new threats, and static heuristics can miss malicious behavior. Verify app signatures and obtain software from trusted distribution repositories/publishers before installing; do not treat README text as authentication.
 
 Edit the service's `Environment=` values and run `systemctl --user daemon-reload` followed by `systemctl --user restart linux-defender.service` to change settings. Set `LINUX_DEFENDER_WATCH_PATHS` to one or more colon-separated paths to monitor other locations.
 
 To keep the user service running after logout, enable lingering for your account with `loginctl enable-linger "$USER"` (this may require administrator approval). Without lingering, the service starts at login and stops when the user manager stops.
 
-## Important limitations
+## Limitations
 
-This is periodic warning-only monitoring, not a kernel-level real-time scanner. A file can be created or used between scans. The monitor does not extract archives or intercept extraction commands, so it cannot guarantee that another program will not extract one. For safer use, inspect warnings before extracting and use extraction tools with resource limits. Monitoring all of `/` is not recommended; configure specific directories you use.
+This is periodic warning-only monitoring, not a kernel-level real-time scanner. A file can be used between scans. The monitor does not intercept extraction or installation, and it does not certify files as safe. Use extraction tools with resource limits for suspicious archives. Monitoring all of `/` is not recommended; configure specific directories you use.
 
-The monitor uses only Python's standard library and does not execute or unpack scanned files.
+Run the built-in tests from the repository root with `python3 -m unittest discover -s tests`.
