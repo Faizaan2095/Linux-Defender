@@ -1,32 +1,34 @@
 # Linux-Defender
 
-A lightweight Linux defense utility designed to detect dangerous archive behavior and large-file misuse before they can cause harm.
+A lightweight Linux defense utility designed to detect risky archive behavior and warn about large files.
 
-## Features
+## Continuous monitoring (first feature)
 
-- Large file warning system for oversized files
-- Zip bomb detection for suspicious `.zip`, `.jar`, `.apk`, and similar archives
-- Directory scanning to inspect files recursively
-- Command-line interface for quick local protection checks
+The systemd **user service** scans configured folders every 30 seconds, including while you use the desktop. It starts automatically when you log in and logs warnings to the systemd journal. It does not need root privileges.
 
-## Quick start
+1. Clone this repository to `~/Linux-Defender` (or edit `WorkingDirectory` in `systemd/linux-defender.service` to the checkout location).
+2. Install and start the service:
 
-```bash
-python3 -m linux_defender.cli /path/to/file-or-directory --max-file-size-mb 100
-```
+   ```bash
+   mkdir -p ~/.config/systemd/user
+   cp systemd/linux-defender.service ~/.config/systemd/user/
+   systemctl --user daemon-reload
+   systemctl --user enable --now linux-defender.service
+   ```
 
-## Example checks
+3. View status and warnings:
 
-Warn and block suspicious files above 250 MB:
+   ```bash
+   systemctl --user status linux-defender.service
+   journalctl --user -u linux-defender.service -f
+   ```
 
-```bash
-python3 -m linux_defender.cli ~/Downloads --max-file-size-mb 250 --max-zip-ratio 10 --max-total-uncompressed-mb 500
-```
+By default, it monitors `~/Downloads`, warns on files at least 100 MiB, and flags ZIP-compatible archives with at least 500 MiB expanded size, a compression ratio of 100:1 or more (for archives with at least 10 MiB expanded data), or 10,000 entries. Edit the service's `Environment=` values and run `systemctl --user daemon-reload` followed by `systemctl --user restart linux-defender.service` to change the settings. Set `LINUX_DEFENDER_WATCH_PATHS` to one or more colon-separated paths to monitor other locations.
 
-## Why this matters
+To keep the user service running after logout, enable systemd lingering for your account with `loginctl enable-linger "$USER"` (this may require administrator approval). Without lingering, the service starts at login and stops when the user manager stops.
 
-Zip bombs and oversized files can exhaust memory, CPU, disk space, or trigger denial-of-service conditions on Linux systems. This tool gives a fast first layer of protection before extraction or movement.
+## Important limitations
 
-## Project status
+This is periodic monitoring, not a kernel-level real-time scanner. A file can be created or used between scans. The monitor **does not extract archives or intercept extraction commands**, so it warns about suspicious archive metadata but cannot guarantee that another program will not extract one. For safer use, inspect warnings before extracting and use extraction tools with resource limits. Monitoring all of `/` is not recommended; configure specific directories you use.
 
-This repository is now initialized with the first feature: archive and large-file defense checks.
+The monitor uses only Python's standard library and does not execute or unpack scanned files.
